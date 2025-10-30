@@ -3,7 +3,7 @@ authors = ["abrisco"]
 language = "en"
 multilingual = false
 src = "src"
-title = "rules_blender"
+title = "rules_ansible"
 
 [output.html]
-git-repository-url = "https://github.com/abrisco/rules_blender"
+git-repository-url = "https://github.com/periareon/rules_blender"
