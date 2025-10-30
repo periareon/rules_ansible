@@ -4,4 +4,4 @@ Bazel rules for running [Ansible playbooks](https://docs.ansible.com/ansible/lat
 
 ## Documentation
 
-Documentation can be found at <https://abrisco.github.io/rules_ansible/>
+Documentation can be found at <https://periareon.github.io/rules_ansible/>
