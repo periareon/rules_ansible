@@ -26,6 +26,18 @@ build --nolegacy_external_runfiles
 # Common flags used to improve bazel python performance
 build --nobuild_runfile_links
 
+# https://github.com/bazelbuild/bazel/issues/19981
+common --incompatible_auto_exec_groups
+
+# https://github.com/bazelbuild/bazel/issues/23043
+build --incompatible_autoload_externally=
+
+# https://github.com/bazelbuild/bazel/issues/12933
+build --incompatible_config_setting_private_default_visibility
+
+# Disable network access in sandboxes by default.
+build --sandbox_default_allow_network=false
+
 ###############################################################################
 
 # This flag should always go last

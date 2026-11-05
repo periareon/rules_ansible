@@ -2,9 +2,9 @@ load("//ansible:defs.bzl", "ansible_toolchain")
 
 ansible_toolchain(
     name = "ansible_toolchain_impl",
-    ansible = "@pip_deps//:ansible",
-    ansible_core = "@pip_deps//:ansible_core",
-    ansible_lint = "@pip_deps//:ansible_lint",
+    ansible = "@pip_deps//ansible",
+    ansible_core = "@pip_deps//ansible_core",
+    ansible_lint = "@pip_deps//ansible_lint",
     visibility = ["//visibility:public"],
 )
 
