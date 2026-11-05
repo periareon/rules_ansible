@@ -1,0 +1,18 @@
+---
+- name: Check that group_vars were loaded
+  ansible.builtin.assert:
+    that:
+      - httpd_port is defined
+    fail_msg: "`httpd_port` from `group_vars/all.yaml` was not loaded"
+
+- name: Create rulesansible group
+  ansible.builtin.group:
+    name: rulesansible
+    state: present
+
+- name: Create rulesansible user
+  ansible.builtin.user:
+    name: rulesansible
+    groups:
+      - rulesansible
+    append: true

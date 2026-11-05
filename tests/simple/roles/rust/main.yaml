@@ -1,6 +1,0 @@
----
-- name: Install rust
-  ansible.builtin.dnf:
-    name:
-      - rust
-    state: "{{ rust_version }}"

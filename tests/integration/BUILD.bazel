@@ -1,0 +1,32 @@
+load("@rules_venv//python:defs.bzl", "py_test")
+
+# Provisions the containers started by `//tests:infra_setup` and asserts on
+# the results. A local docker daemon is required so the test is excluded from
+# wildcards. Run it explicitly:
+#
+#   bazel run //tests:infra_setup
+#   bazel test //tests/integration:integration_test
+py_test(
+    name = "integration_test",
+    size = "large",
+    srcs = ["integration_test.py"],
+    data = [
+        "//tests/multi_role",
+        "//tests/simple",
+    ],
+    env = {
+        "PLAYBOOK_MULTI_ROLE": "$(rlocationpath //tests/multi_role)",
+        "PLAYBOOK_SIMPLE": "$(rlocationpath //tests/simple)",
+    },
+    env_inherit = [
+        "DOCKER_HOST",
+        "PATH",
+    ],
+    tags = [
+        "external",
+        "manual",
+        "requires-docker",
+        "requires-network",
+    ],
+    deps = ["@rules_venv//python/runfiles"],
+)
