@@ -151,33 +151,24 @@ def parse_args(argv: Optional[Sequence[str]]) -> argparse.Namespace:
 def load_entrypoints() -> Dict[str, str]:
     """Load entrypoints files into a dict
 
+    The entrypoints are sources of the same `py_binary` as this file so they
+    sit next to it wherever it is run from, be that the runfiles of a test,
+    the exec root of an action, or an external repository.
+
     Returns:
         A mapping of entrypoints to their text contents.
     """
+    scripts = Path(__file__).absolute().parent / "scripts"
     entrypoints = {
-        "ansible-config": "private/scripts/ansible_config.py",
-        "ansible-doc": "private/scripts/ansible_doc.py",
-        "ansible-galaxy": "private/scripts/ansible_galaxy.py",
-        "ansible-playbook": "private/scripts/ansible_playbook.py",
-        "ansible": "private/scripts/ansible.py",
+        "ansible-config": scripts / "ansible_config.py",
+        "ansible-doc": scripts / "ansible_doc.py",
+        "ansible-galaxy": scripts / "ansible_galaxy.py",
+        "ansible-playbook": scripts / "ansible_playbook.py",
+        "ansible": scripts / "ansible.py",
     }
 
-    # Convert to runfiles path
-    if is_test():
-        try:
-            return {
-                name: _rlocation(f"rules_ansible/{path}").read_text(encoding="utf-8")
-                for name, path in entrypoints.items()
-            }
-        except FileNotFoundError:
-            return {
-                name: _rlocation(f"_main/{path}").read_text(encoding="utf-8")
-                for name, path in entrypoints.items()
-            }
-
     return {
-        name: _execpath(path).read_text(encoding="utf-8")
-        for name, path in entrypoints.items()
+        name: path.read_text(encoding="utf-8") for name, path in entrypoints.items()
     }
 
 
@@ -202,7 +193,6 @@ def lint_main(
 
     Args:
         additional_env: Additional environment variables to set.
-        playbook_dir: The path to the ansible playbook directory.
         capture_output: The value of `subprocess.run.capture_output`.
         args: Arguments to pass to ansible-lint
         temp_dir: An optional base directory to use for writing files required by
@@ -212,50 +202,51 @@ def lint_main(
         The results of the ansible-lint `subprocess.run`.
     """
 
-    # Generate temp directories within the sandbox
-    dir_prefix = (
-        str(temp_dir) if temp_dir else os.environ.get("TEST_TMPDIR", str(Path.cwd()))
-    )
+    # Under `bazel test` the temp directory is kept within the test's sandbox.
+    # Elsewhere the system temp directory is used, never the current directory
+    # which in an action is the exec root.
+    dir_prefix = str(temp_dir) if temp_dir else os.environ.get("TEST_TMPDIR")
 
-    # Create a directory to append to `PATH`
-    tmp_path = Path(tempfile.mkdtemp(dir=dir_prefix)) / "_fakepath"
-    tmp_path.mkdir(exist_ok=True, parents=True)
+    with tempfile.TemporaryDirectory(dir=dir_prefix) as tmp:
+        # Create a directory to append to `PATH`
+        tmp_path = Path(tmp) / "_fakepath"
+        tmp_path.mkdir(exist_ok=True, parents=True)
 
-    for tool, content in load_entrypoints().items():
-        entrypoint_content = "\n".join(
-            [
-                f"#!{sys.executable}",
-                content,
-            ]
+        for tool, content in load_entrypoints().items():
+            entrypoint_content = "\n".join(
+                [
+                    f"#!{sys.executable}",
+                    content,
+                ]
+            )
+
+            write_entrypoint(tmp_path / tool, entrypoint_content)
+
+        env = dict(os.environ)
+        if additional_env:
+            env.update(additional_env)
+
+        sys_path = str(tmp_path) + os.pathsep + env.get("PATH", "")
+        env.update(
+            {
+                "HOME": str(tmp_path),
+                ANSIBLE_LINT_ENTRY_POINT: __file__,
+                "PATH": sys_path,
+            }
         )
 
-        write_entrypoint(tmp_path / tool, entrypoint_content)
+        lint_args = [
+            sys.executable,
+            __file__,
+        ] + list(args)
 
-    env = dict(os.environ)
-    if additional_env:
-        env.update(additional_env)
-
-    sys_path = str(tmp_path) + os.pathsep + env.get("PATH", "")
-    env.update(
-        {
-            "HOME": str(tmp_path),
-            ANSIBLE_LINT_ENTRY_POINT: __file__,
-            "PATH": sys_path,
-        }
-    )
-
-    lint_args = [
-        sys.executable,
-        __file__,
-    ] + args
-
-    return subprocess.run(
-        lint_args,
-        env=env,
-        check=False,
-        stdout=subprocess.PIPE if capture_output else None,
-        stderr=subprocess.STDOUT if capture_output else None,
-    )
+        return subprocess.run(
+            lint_args,
+            env=env,
+            check=False,
+            stdout=subprocess.PIPE if capture_output else None,
+            stderr=subprocess.STDOUT if capture_output else None,
+        )
 
 
 def main() -> None:

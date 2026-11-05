@@ -1,0 +1,14 @@
+load("@rules_ansible//ansible:defs.bzl", "ansible_toolchain")
+
+ansible_toolchain(
+    name = "ansible_toolchain_impl",
+    ansible = "@example_pip_deps//ansible",
+    ansible_core = "@example_pip_deps//ansible_core",
+    ansible_lint = "@example_pip_deps//ansible_lint",
+)
+
+toolchain(
+    name = "ansible_toolchain",
+    toolchain = ":ansible_toolchain_impl",
+    toolchain_type = "@rules_ansible//ansible:toolchain_type",
+)

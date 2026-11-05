@@ -53,6 +53,12 @@ jobs:
         run: bazel $env:BAZEL_STARTUP_FLAGS build //...
         if: startswith(runner.os, 'Windows')
 
+      - name: Consumer tests
+        # Exercise the rules as a dependent repository would.
+        run: bazel ${BAZEL_STARTUP_FLAGS[@]} test //...
+        working-directory: examples
+        if: startswith(runner.os, 'Windows') != true
+
       - name: Integration tests
         run: |
           bazel ${BAZEL_STARTUP_FLAGS[@]} run //tests:infra_setup

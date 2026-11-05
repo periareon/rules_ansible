@@ -52,34 +52,32 @@ ansible_script_main_finder_aspect = aspect(
 )
 
 def get_process_wrapper_attr(ctx, attr_name):
-    """_summary_
+    """Describe the python script behind an executable attribute.
+
+    The attribute is expected to carry `ansible_script_main_finder_aspect`, which
+    records the `main` of the `py_binary` it points at.
 
     Args:
-        ctx (_type_): _description_
-        attr_name (_type_): _description_
+        ctx (ctx): The rule's context object.
+        attr_name (str): The name of the attribute.
 
     Returns:
-        _type_: _description_
+        struct: A struct with the following fields:
+            - `main` (File): The main source file of the script.
+            - `target` (Target): The script's target.
     """
     target = getattr(ctx.attr, attr_name)
 
-    if AnsibleScriptInfo in target:
-        return struct(
-            main = target[AnsibleScriptInfo].main,
-            target = target,
-        )
-
-    files = getattr(ctx.files, attr_name)
-    if len(files) != 1:
-        fail("in script attribute of {rule} rule {export_label}: '{script_label}' must produce a single file".format(
-            rule = ctx.rule.name,
-            export_label = ctx.label,
-            script_label = target.label,
+    if AnsibleScriptInfo not in target:
+        fail("`{}` of {} must be a python binary carrying `ansible_script_main_finder_aspect`, got {}".format(
+            attr_name,
+            ctx.label,
+            target.label,
         ))
 
     return struct(
-        main = files[0],
-        target = None,
+        main = target[AnsibleScriptInfo].main,
+        target = target,
     )
 
 def generate_process_wrapper(
@@ -106,7 +104,7 @@ def generate_process_wrapper(
             - `executable_info` (PyExecutableInfo): The provider consumers such as
               `py_venv_zipapp` use to repackage the executable.
     """
-    venv_toolchain = py_venv_common.get_toolchain(ctx, cfg = "exec")
+    venv_toolchain = py_venv_common.get_toolchain(ctx)
 
     srcs = [script_info.main]
     if main:

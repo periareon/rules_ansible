@@ -1,0 +1,9 @@
+# The lockfile of this module would churn with every change to the parent
+# repository and is not worth tracking.
+common --lockfile_mode=off
+
+# Run `ansible-lint` on every `ansible_playbook` as part of `bazel test`.
+test --aspects=@rules_ansible//ansible:defs.bzl%ansible_lint_aspect
+test --output_groups=+ansible_lint_checks
+
+try-import %workspace%/user.bazelrc
