@@ -1,0 +1,26 @@
+load("@bazel_skylib//rules:write_file.bzl", "write_file")
+load("@rules_ansible//ansible:defs.bzl", "ansible_role")
+
+# Two ways of using a Bazel-built output from a role. Either way the file ends
+# up in the role's directory at runtime, so Ansible's `copy`, `template`,
+# `unarchive` and friends find it by its usual relative name.
+
+# An output generated directly in the role's package.
+write_file(
+    name = "build_info",
+    out = "files/build_info.txt",
+    content = [
+        "built by bazel",
+        "",
+    ],
+)
+
+ansible_role(
+    name = "deploy",
+    srcs = glob(["tasks/*.yaml"]) + [":build_info"],
+    # An output built in another package, placed at `files/app.conf`.
+    files = {
+        "//app:config": "app.conf",
+    },
+    visibility = ["//visibility:public"],
+)

@@ -55,7 +55,9 @@ jobs:
 
       - name: Consumer tests
         # Exercise the rules as a dependent repository would.
-        run: bazel ${BAZEL_STARTUP_FLAGS[@]} test //...
+        run: |
+          bazel ${BAZEL_STARTUP_FLAGS[@]} test //...
+          bazel ${BAZEL_STARTUP_FLAGS[@]} run //playbook:site
         working-directory: examples
         if: startswith(runner.os, 'Windows') != true
 

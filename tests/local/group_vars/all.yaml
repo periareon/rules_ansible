@@ -1,0 +1,2 @@
+---
+release_dir: "{{ lookup('env', 'RELEASE_DIR') | default(lookup('env', 'TMPDIR') | default('/tmp', true) ~ '/rules_ansible_local', true) }}"

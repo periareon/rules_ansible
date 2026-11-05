@@ -1,0 +1,9 @@
+load("@rules_ansible//ansible:defs.bzl", "ansible_role")
+
+# A role in its own package. Playbooks anywhere in the repository find it by
+# name through `roles = ["//roles/hello"]`.
+ansible_role(
+    name = "hello",
+    srcs = glob(["tasks/*.yaml"]),
+    visibility = ["//visibility:public"],
+)

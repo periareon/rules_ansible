@@ -15,6 +15,18 @@ def _ansible_lint_aspect_impl(target, ctx):
 
     playbook_info = target[AnsiblePlaybookInfo]
 
+    # `ansible-lint` runs in a venv built for this target so the playbook's
+    # python `deps` are importable by the plugins it loads while linting.
+    wrapper = generate_process_wrapper(
+        ctx = ctx,
+        script_info = get_process_wrapper_attr(ctx, "_process_wrapper"),
+        runfiles = None,
+        deps = playbook_info.deps,
+        name = "{}.ansible_lint".format(target.label.name),
+        cfg = "exec",
+        for_action = True,
+    )
+
     args = ctx.actions.args()
 
     inputs = depset(
@@ -29,13 +41,16 @@ def _ansible_lint_aspect_impl(target, ctx):
     args.add("--playbook", playbook_info.playbook)
     args.add("--config_file", playbook_info.config)
     args.add("--lint_config_file", ctx.file._lint_config)
+    for _, anchor, depth in playbook_info.role_anchors:
+        args.add_all("--role", [anchor, str(depth)])
     args.add("--")
     args.add("--show-relpath")
     args.add("--offline")
 
     ctx.actions.run(
-        executable = ctx.executable._process_wrapper,
+        executable = wrapper.executable,
         inputs = inputs,
+        tools = wrapper.runfiles.files,
         outputs = [output],
         arguments = [args],
         mnemonic = "AnsibleLint",
@@ -59,9 +74,10 @@ ansible_lint_aspect = aspect(
             doc = "A process wrapper for running `ansible-lint`.",
             cfg = "exec",
             executable = True,
+            aspects = [ansible_script_main_finder_aspect],
             default = Label("//private:ansible_lint_process_wrapper"),
         ),
-    },
+    } | py_venv_common.create_venv_attrs(),
 )
 
 def _rlocationpath(file, workspace_name):
@@ -79,6 +95,8 @@ def _ansible_lint_test_impl(ctx):
     args.extend(["--package", ctx.attr.playbook.label.package])
     args.extend(["--config_file", _rlocationpath(playbook_info.config, ctx.workspace_name)])
     args.extend(["--lint_config_file", _rlocationpath(ctx.file.config, ctx.workspace_name)])
+    for _, anchor, depth in playbook_info.role_anchors:
+        args.extend(["--role", _rlocationpath(anchor, ctx.workspace_name), str(depth)])
     args.append("--")
     args.append("--show-relpath")
     args.append("--offline")
@@ -100,6 +118,7 @@ def _ansible_lint_test_impl(ctx):
         ctx = ctx,
         script_info = script_info,
         runfiles = runfiles,
+        deps = playbook_info.deps,
     )
 
     return [

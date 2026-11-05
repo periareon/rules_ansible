@@ -1,0 +1,5 @@
+---
+- name: Use a filter plugin backed by a python dependency
+  ansible.builtin.assert:
+    that:
+      - ("world" | greet) == "hello, world"

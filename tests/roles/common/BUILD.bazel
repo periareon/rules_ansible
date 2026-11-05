@@ -1,0 +1,7 @@
+load("@rules_ansible//ansible:defs.bzl", "ansible_role")
+
+ansible_role(
+    name = "common",
+    srcs = glob(["tasks/*.yaml"]),
+    visibility = ["//tests:__subpackages__"],
+)

@@ -1,0 +1,29 @@
+---
+- name: Create the release directory
+  ansible.builtin.file:
+    path: "{{ release_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Install the artifact built in another package
+  ansible.builtin.copy:
+    src: artifact.txt
+    dest: "{{ release_dir }}/artifact.txt"
+    mode: "0644"
+
+- name: Install the build info generated in the role's package
+  ansible.builtin.copy:
+    src: build_info.txt
+    dest: "{{ release_dir }}/build_info.txt"
+    mode: "0644"
+
+- name: Read the installed artifact
+  ansible.builtin.slurp:
+    src: "{{ release_dir }}/artifact.txt"
+  register: artifact
+
+# `greet` is a filter plugin of the `greet` role, a dependency of this role.
+- name: Check the installed artifact
+  ansible.builtin.assert:
+    that:
+      - (artifact.content | b64decode) == ("bazel" | greet) ~ "\n"

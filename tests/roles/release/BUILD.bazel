@@ -1,0 +1,29 @@
+load("@bazel_skylib//rules:write_file.bzl", "write_file")
+load("@rules_ansible//ansible:defs.bzl", "ansible_role")
+
+# A Bazel-built output used by the role. Generated files declared in the
+# role's package land in the role's directory at runtime like any other file,
+# so Ansible finds `files/build_info.txt` natively.
+write_file(
+    name = "build_info",
+    out = "files/build_info.txt",
+    content = [
+        "built by bazel",
+        "",
+    ],
+    newline = "unix",
+)
+
+ansible_role(
+    name = "release",
+    srcs = glob([
+        "meta/*.yaml",
+        "tasks/*.yaml",
+    ]) + [":build_info"],
+    # An artifact built in another package, placed at `files/artifact.txt`.
+    files = {
+        "//tests/local:artifact": "artifact.txt",
+    },
+    roles = ["//tests/roles/greet"],
+    visibility = ["//tests:__subpackages__"],
+)

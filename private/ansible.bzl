@@ -1,5 +1,6 @@
 """Ansible rules"""
 
+load("@rules_venv//python:py_info.bzl", "PyInfo")
 load("@rules_venv//python/venv:defs.bzl", "py_venv_common")
 load(
     "//private/utils:utils.bzl",
@@ -7,14 +8,18 @@ load(
     "generate_process_wrapper",
     "get_process_wrapper_attr",
 )
+load(":role.bzl", "AnsibleRoleInfo")
 
 AnsiblePlaybookInfo = provider(
     doc = "Infomation describing components of an Ansible playbook.",
     fields = {
         "config": "File: The ansible config file",
+        "data": "depset[File]: Additional runtime files of the playbook",
+        "deps": "list[Target]: Python dependencies made available to Ansible on the controller, roles included",
         "hosts": "File: The hosts file for the current inventory",
         "inventory": "depset[File]: The sources of all inventory files",
         "playbook": "File: The root of the playbook",
+        "role_anchors": "list[tuple]: `(name, anchor, depth)` of every `ansible_role`, see `AnsibleRoleInfo.roles`",
         "roles": "depset[File]: The sources of all roles for the playbook",
     },
 )
@@ -25,8 +30,48 @@ def _rlocationpath(file, workspace_name):
 
     return "{}/{}".format(workspace_name, file.short_path)
 
+def _collect_roles(ctx):
+    """Gather roles given as files and as `ansible_role` targets.
+
+    Args:
+        ctx (ctx): The rule's context object.
+
+    Returns:
+        struct: With `srcs` (depset[File]) of all roles, `files` (depset[File]) of their
+            runtime payload which is not linted, `anchors` (list[tuple]) of every
+            `ansible_role` and `deps` (list[Target]) of their python dependencies.
+    """
+    files = []
+    infos = []
+    for target in ctx.attr.roles:
+        if AnsibleRoleInfo in target:
+            infos.append(target[AnsibleRoleInfo])
+        else:
+            files.extend(target.files.to_list())
+
+    anchors = []
+    seen = {}
+    for name, anchor, depth in depset(transitive = [info.roles for info in infos]).to_list():
+        if name in seen:
+            fail("{} depends on two different roles named `{}`: {} and {}".format(
+                ctx.label,
+                name,
+                seen[name].owner,
+                anchor.owner,
+            ))
+        seen[name] = anchor
+        anchors.append((name, anchor, depth))
+
+    return struct(
+        srcs = depset(files, transitive = [info.transitive_srcs for info in infos]),
+        files = depset(transitive = [info.transitive_files for info in infos]),
+        anchors = anchors,
+        deps = depset(ctx.attr.deps, transitive = [info.transitive_deps for info in infos]).to_list(),
+    )
+
 def _ansible_playbook_impl(ctx):
     venv_toolchain = py_venv_common.get_toolchain(ctx)
+    roles = _collect_roles(ctx)
 
     # Playbooks run straight out of runfiles. Source files keep their repo
     # layout there, so roles, `group_vars`, `host_vars` and anything else
@@ -46,6 +91,12 @@ def _ansible_playbook_impl(ctx):
         "ANSIBLE_BZL_LAUNCHER_NAME": ctx.label.name,
         "ANSIBLE_BZL_PACKAGE": ctx.label.package,
         "ANSIBLE_BZL_PLAYBOOK": _rlocationpath(playbook, ctx.workspace_name),
+        # `ansible_role` targets are found through `ANSIBLE_ROLES_PATH`, which the
+        # launcher derives from these files at runtime.
+        "ANSIBLE_BZL_ROLES": json.encode([
+            {"depth": depth, "file": _rlocationpath(anchor, ctx.workspace_name)}
+            for _, anchor, depth in roles.anchors
+        ]),
     }
 
     entrypoint = ctx.actions.declare_file("{}.ansible_launcher.py".format(ctx.label.name))
@@ -71,24 +122,31 @@ def _ansible_playbook_impl(ctx):
         ),
     )
 
-    data = [playbook, config, hosts] + ctx.files.inventory + ctx.files.roles + ctx.files.vault
+    data = [playbook, config, hosts] + ctx.files.inventory + ctx.files.vault + ctx.files.data
 
     script_info = get_process_wrapper_attr(ctx, "_launcher")
 
     wrapper = generate_process_wrapper(
         ctx = ctx,
         script_info = script_info,
-        runfiles = ctx.runfiles(files = data, transitive_files = venv_toolchain.all_files),
+        runfiles = ctx.runfiles(
+            files = data,
+            transitive_files = depset(transitive = [roles.srcs, roles.files, venv_toolchain.all_files]),
+        ),
         main = entrypoint,
+        deps = roles.deps,
     )
 
     return [
         AnsiblePlaybookInfo(
             config = config,
+            data = depset(ctx.files.data, transitive = [roles.files]),
+            deps = roles.deps,
             playbook = playbook,
             hosts = hosts,
             inventory = depset(ctx.files.inventory + [hosts]),
-            roles = depset(ctx.files.roles),
+            role_anchors = roles.anchors,
+            roles = roles.srcs,
         ),
         DefaultInfo(
             files = depset([wrapper.executable]),
@@ -108,6 +166,22 @@ ansible_playbook = rule(
             default = Label("//ansible:config"),
             allow_single_file = True,
         ),
+        "data": attr.label_list(
+            doc = (
+                "Additional files available at runtime. Files keep their repository layout, so a " +
+                "file in the playbook's package is reachable as `{{ playbook_dir }}/<path>`."
+            ),
+            allow_files = True,
+        ),
+        "deps": attr.label_list(
+            doc = (
+                "Python dependencies made available to Ansible on the controller, alongside " +
+                "`ansible` itself. Required by anything that runs in the controller's interpreter: " +
+                "inventory, lookup, filter and connection plugins, and modules run with " +
+                "`connection: local` or `delegate_to: localhost`. Also available to `ansible-lint`."
+            ),
+            providers = [PyInfo],
+        ),
         "hosts": attr.label(
             doc = "Ansible hosts file",
             allow_single_file = True,
@@ -123,8 +197,13 @@ ansible_playbook = rule(
             mandatory = True,
         ),
         "roles": attr.label_list(
-            doc = "The source files for all ansible roles required by the playbook.",
+            doc = (
+                "The roles required by the playbook, as `ansible_role` targets or as files of roles " +
+                "in the playbook's `roles/` directory, e.g. `glob([\"roles/**/*.yaml\"])`. " +
+                "`ansible_role` targets are found by name wherever they live."
+            ),
             allow_files = True,
+            providers = [[AnsibleRoleInfo], []],
         ),
         "vault": attr.label_list(
             doc = (
