@@ -86,26 +86,37 @@ def generate_process_wrapper(
         *,
         ctx,
         script_info,
-        runfiles):
-    """_summary_
+        runfiles,
+        main = None):
+    """Create an executable which runs a python script within a venv.
 
     Args:
-        ctx (_type_): _description_
-        script_info (_type_): _description_
-        runfiles (_type_): _description_
+        ctx (ctx): The rule's context object.
+        script_info (struct): The value returned by `get_process_wrapper_attr`.
+        runfiles (Runfiles): Additional runfiles to associate with the executable.
+        main (File, optional): An entrypoint to use in place of `script_info.main`. The
+            script's own `main` is still a source of the executable so the entrypoint
+            can import it.
 
     Returns:
-        _type_: _description_
+        struct: A struct with the following fields:
+            - `executable` (File): The generated executable.
+            - `runfiles` (Runfiles): The runfiles of the executable.
+            - `py_info` (PyInfo): The `PyInfo` provider of the executable.
+            - `executable_info` (PyExecutableInfo): The provider consumers such as
+              `py_venv_zipapp` use to repackage the executable.
     """
     venv_toolchain = py_venv_common.get_toolchain(ctx, cfg = "exec")
 
-    process_wrapper_main = script_info.main
-    deps = [script_info.target]
     srcs = [script_info.main]
+    if main:
+        srcs.append(main)
+    else:
+        main = script_info.main
 
     dep_info = py_venv_common.create_dep_info(
         ctx = ctx,
-        deps = deps,
+        deps = [script_info.target],
     )
 
     py_info = py_venv_common.create_py_info(
@@ -123,10 +134,23 @@ def generate_process_wrapper(
         ctx = ctx,
         venv_toolchain = venv_toolchain,
         py_info = py_info,
-        main = process_wrapper_main,
+        main = main,
         runfiles = all_runfiles,
         use_runfiles_in_entrypoint = True,
         force_runfiles = False,
     )
 
-    return executable, runfiles
+    executable_info = py_venv_common.create_py_executable_info(
+        ctx = ctx,
+        venv_toolchain = venv_toolchain,
+        py_info = py_info,
+        main = main,
+        runfiles = all_runfiles,
+    )
+
+    return struct(
+        executable = executable,
+        runfiles = runfiles,
+        py_info = py_info,
+        executable_info = executable_info,
+    )

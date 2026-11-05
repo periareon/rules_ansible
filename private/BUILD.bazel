@@ -31,7 +31,6 @@ py_binary(
     srcs = [
         "ansible_launcher.py",
         "scripts/ansible_playbook.py",
-        "scripts/ansible_vault.py",
     ],
     main = "ansible_launcher.py",
     visibility = ["//visibility:public"],

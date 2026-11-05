@@ -119,7 +119,7 @@ def _ansible_lint_test_impl(ctx):
 
     script_info = get_process_wrapper_attr(ctx, "_process_wrapper")
 
-    runner, runfiles = generate_process_wrapper(
+    wrapper = generate_process_wrapper(
         ctx = ctx,
         script_info = script_info,
         runfiles = runfiles,
@@ -127,9 +127,9 @@ def _ansible_lint_test_impl(ctx):
 
     return [
         DefaultInfo(
-            files = depset([runner]),
-            runfiles = runfiles,
-            executable = runner,
+            files = depset([wrapper.executable]),
+            runfiles = wrapper.runfiles,
+            executable = wrapper.executable,
         ),
         testing.TestEnvironment(
             environment = {

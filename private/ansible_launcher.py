@@ -1,21 +1,16 @@
 """The ansible-playbook launcher."""
 
-import json
 import logging
 import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import List, Optional
+from typing import Optional
 
 from python.runfiles import Runfiles
 
 ENV_ANSIBLE_BZL_PLAYBOOK = "ANSIBLE_BZL_PLAYBOOK"
 ENV_ANSIBLE_BZL_PACKAGE = "ANSIBLE_BZL_PACKAGE"
-ENV_ANSIBLE_BZL_ANSIBLE = "ANSIBLE_BZL_ANSIBLE"
-ENV_ANSIBLE_BZL_ANSIBLE_VAULT = "ANSIBLE_BZL_ANSIBLE_VAULT"
-ENV_ANSIBLE_BZL_ARGS = "ANSIBLE_BZL_ARGS"
-ENV_ANSIBLE_BZL_VAULT_FILES = "ANSIBLE_BZL_VAULT_FILES"
 ENV_ANSIBLE_BZL_CONFIG = "ANSIBLE_BZL_CONFIG"
 ENV_ANSIBLE_BZL_LAUNCHER_NAME = "ANSIBLE_BZL_LAUNCHER_NAME"
 ENV_ANSIBLE_BZL_INVENTORY_HOSTS = "ANSIBLE_BZL_INVENTORY_HOSTS"
@@ -30,17 +25,32 @@ def _rlocation(rlocationpath: str) -> Path:
         rlocationpath: The runfile key
 
     Returns:
-        The requested runifle.
+        The requested runifle as an absolute path.
     """
     if not RUNFILES:
         raise EnvironmentError("Failed to locate runfiles")
     runfile = RUNFILES.Rlocation(rlocationpath, os.getenv("TEST_WORKSPACE"))
     if not runfile:
         raise FileNotFoundError(f"Failed to find runfile: {rlocationpath}")
-    path = Path(runfile)
+    path = Path(runfile).absolute()
     if not path.exists():
         raise FileNotFoundError(f"Runfile does not exist: ({rlocationpath}) {path}")
     return path
+
+
+def _env(name: str) -> str:
+    """Read a required environment variable set by the generated entrypoint.
+
+    Args:
+        name: The name of the variable.
+
+    Returns:
+        The value.
+    """
+    env = os.getenv(name)
+    if env is None:
+        raise EnvironmentError("{} is not set".format(name))
+    return env
 
 
 def get_playbook() -> Path:
@@ -49,10 +59,7 @@ def get_playbook() -> Path:
     Returns:
         The path to the playbook to run
     """
-    env = os.getenv(ENV_ANSIBLE_BZL_PLAYBOOK)
-    if not env:
-        raise EnvironmentError("{} is not set".format(ENV_ANSIBLE_BZL_PLAYBOOK))
-    return _rlocation(env)
+    return _rlocation(_env(ENV_ANSIBLE_BZL_PLAYBOOK))
 
 
 def get_inventory_hosts() -> Path:
@@ -61,10 +68,7 @@ def get_inventory_hosts() -> Path:
     Returns:
         The path to `hosts`.
     """
-    env = os.getenv(ENV_ANSIBLE_BZL_INVENTORY_HOSTS)
-    if not env:
-        raise EnvironmentError("{} is not set".format(ENV_ANSIBLE_BZL_INVENTORY_HOSTS))
-    return _rlocation(env)
+    return _rlocation(_env(ENV_ANSIBLE_BZL_INVENTORY_HOSTS))
 
 
 def get_ansible_config() -> Path:
@@ -73,10 +77,7 @@ def get_ansible_config() -> Path:
     Returns:
         The path to the ansible config
     """
-    env = os.getenv(ENV_ANSIBLE_BZL_CONFIG)
-    if not env:
-        raise EnvironmentError("{} is not set".format(ENV_ANSIBLE_BZL_CONFIG))
-    return _rlocation(env)
+    return _rlocation(_env(ENV_ANSIBLE_BZL_CONFIG))
 
 
 def get_ansible_package() -> str:
@@ -85,10 +86,7 @@ def get_ansible_package() -> str:
     Returns:
         The Bazel package name of the current target.
     """
-    env = os.getenv(ENV_ANSIBLE_BZL_PACKAGE)
-    if not env:
-        raise EnvironmentError("{} is not set".format(ENV_ANSIBLE_BZL_PACKAGE))
-    return env
+    return _env(ENV_ANSIBLE_BZL_PACKAGE)
 
 
 def get_ansible_bin() -> Path:
@@ -97,177 +95,88 @@ def get_ansible_bin() -> Path:
     Returns:
         A python entrypoint.
     """
-    path = Path(__file__).parent / "scripts/ansible_playbook.py"
+    path = Path(__file__).absolute().parent / "scripts/ansible_playbook.py"
     if not path.exists():
         raise FileNotFoundError(path)
 
     return path
 
 
-def get_ansible_vault_bin() -> Path:
-    """Locate the ansible-vault binary
+def get_working_directory() -> Path:
+    """Get the directory the playbook was invoked from.
+
+    Under `bazel run` the process is started inside the runfiles tree and the
+    directory `bazel` was invoked from is passed as `BUILD_WORKING_DIRECTORY`.
+    Anywhere else, such as a published binary or zipapp, the current directory
+    is already the one the user invoked from. Ansible is run from this
+    directory so its own working directory conventions hold, relative paths
+    given on the command line resolve against it, and it is the root of the
+    vault password file lookup.
 
     Returns:
-        A python entrypoint.
+        The working directory.
     """
-    path = Path(__file__).parent / "scripts/ansible_vault.py"
-    if not path.exists():
-        raise FileNotFoundError(path)
-
-    return path
-
-
-def get_bazel_workspace_root() -> Path:
-    """Get the workspace root of the current target
-
-    Returns:
-        The Bazel workspace root.
-    """
-    env = os.getenv("BUILD_WORKSPACE_DIRECTORY")
-    if not env:
-        raise EnvironmentError("BUILD_WORKSPACE_DIRECTORY is not set")
-    return Path(env)
+    env = os.getenv("BUILD_WORKING_DIRECTORY")
+    if env:
+        return Path(env)
+    return Path.cwd()
 
 
-def get_ansible_args() -> List[str]:
-    """Return a list of extra args for running ansible.
-
-    Returns:
-        A list of arguments to pass to `ansible-playbook.`
-    """
-    env = os.getenv(ENV_ANSIBLE_BZL_ARGS)
-    if not env:
-        raise EnvironmentError("{} is not set".format(ENV_ANSIBLE_BZL_ARGS))
-    return json.loads(env)
-
-
-def get_ansible_vault_files() -> List[str]:
-    """Return any vault encrypted files passed to the `ansible_playbook` target.
-
-    Returns:
-        A list of vault files
-    """
-    env = os.getenv(ENV_ANSIBLE_BZL_VAULT_FILES)
-    if not env:
-        raise EnvironmentError("{} is not set".format(ENV_ANSIBLE_BZL_VAULT_FILES))
-    return [_rlocation(file) for file in json.loads(env)]
-
-
-def find_vault_key() -> Optional[Path]:
+def find_vault_key(working_dir: Path) -> Optional[Path]:
     """Locate the vault password file
+
+    The file is `.vault_pass`, or `.vault_pass/<environment>` for inventories
+    laid out as `inventories/<environment>/hosts`. It is looked for in the
+    playbook's package below the working directory (for invocations from a
+    workspace root), then in the working directory and each directory above
+    it. Under `bazel run` the package and the workspace root are checked as
+    well regardless of where `bazel` was invoked from.
+
+    Args:
+        working_dir: The directory the playbook was invoked from.
 
     Returns:
         The path to the vault password file if found.
     """
-    # This assumes inventories are structured as `./inventories/<environment>/hosts`.
-    # So if the grand parent of the hosts file is not a directory named `inventories`,
-    # we assume the vault pass directory is structured in the same way.
+    # Ansible's own mechanism takes precedence.
+    if "ANSIBLE_VAULT_PASSWORD_FILE" in os.environ:
+        return None
+
     hosts_file = get_inventory_hosts()
     if hosts_file.parent.parent.name == "inventories":
         vault_pass_file = Path(".vault_pass") / hosts_file.parent.name
     else:
         vault_pass_file = Path(".vault_pass")
 
-    # First look in the package directory for vault key
-    package_dir = get_bazel_workspace_root() / get_ansible_package()
-    vault_key = package_dir / vault_pass_file
+    package = get_ansible_package()
+    candidates = [working_dir / package, working_dir, *working_dir.parents]
 
-    # Check the parent directory
-    if not vault_key.exists():
-        vault_key = package_dir.parent / vault_pass_file
+    workspace = os.getenv("BUILD_WORKSPACE_DIRECTORY")
+    if workspace:
+        candidates.extend([Path(workspace) / package, Path(workspace)])
 
-    # if the key doesn't exist, try the workspace root
-    if not vault_key.exists():
-        vault_key = get_bazel_workspace_root() / vault_pass_file
-
-    if vault_key.exists():
-        return vault_key
+    for directory in candidates:
+        vault_key = directory / vault_pass_file
+        if vault_key.is_file():
+            return vault_key.absolute()
 
     return None
 
 
-def delete_files(files: List[Path]) -> None:
-    """Delete a list of files
-
-    Args:
-        files: The files to delete.
-    """
-    for file in files:
-        file.unlink()
-
-
-def decrypt_vault(
-    vault_files: List[Path],
-    vault_key: Optional[Path],
-) -> List[Path]:
-    """Decrypt vault files for use by ansible.
-
-    Files are expected to have a suffix matching the name of the `ansible_playbook` target and
-    `.vaultfile`. This allows us to decrypt the files into the expected location with the stripped
-    suffix so the playbooks have access to decrypted content without leaving decrypted content
-    in the repo.
-
-    Args:
-        vault_files: A list of paths to ansible-vault encrypted files
-        vault_key: The path to the vault password file. E.g. `/ansible/.vault-pass/<inventory>`
-
-    Returns:
-        Paths to the decrypted files.
-    """
-
-    environ = os.environ.copy()
-
-    command = [
-        sys.executable,
-        str(get_ansible_vault_bin()),
-        "decrypt",
-    ]
-
-    # Otherwise, hope that `ansible-vault` can find it
-    if vault_key and vault_key.exists():
-        command.extend(
-            [
-                "--vault-password-file",
-                str(vault_key),
-            ]
-        )
-
-    # This value must match that defined by the `AnsibleVaultCopier` action
-    suffix = ".vaultfile"
-
-    decrypted_files = []
-    try:
-        for file in vault_files:
-            # Now make sure to "install" the files by stripping the `.vaultfile` extension
-            decrypted_file = Path(str(file)[: -len(suffix)])
-
-            vault_command = command + [
-                str(file),
-                "--output",
-                str(decrypted_file),
-            ]
-
-            subprocess.run(vault_command, check=True, env=environ)
-            decrypted_file.chmod(0o600)
-            decrypted_files.append(decrypted_file)
-    except (subprocess.CalledProcessError, KeyboardInterrupt):
-        delete_files(decrypted_files)
-        raise
-
-    return decrypted_files
-
-
 def run_ansible(
     playbook: Path,
+    working_dir: Path,
     vault_password_file: Optional[Path] = None,
-    extra_args: List[str] = [],
-) -> None:
+) -> subprocess.CompletedProcess:
     """Run ansible-playbook
 
     Args:
         playbook: The path to the playbook to run.
+        working_dir: The directory to run ansible from.
         vault_password_file: The vault password file to use. E.g. `/ansible/.vault-pass/<inventory>`
-        extra_args: Additional arguments to pass to the `ansible-playbook` call.
+
+    Returns:
+        The completed process.
     """
     ansible = get_ansible_bin()
 
@@ -283,13 +192,12 @@ def run_ansible(
         f"--inventory={inventory}",
     ]
 
-    if vault_password_file and vault_password_file.exists():
+    if vault_password_file:
         command.append(
             f"--vault-password-file={vault_password_file}",
         )
 
     command.extend(sys.argv[1:])
-    command.extend(extra_args)
 
     env = dict(os.environ)
     cfg = get_ansible_config()
@@ -297,7 +205,7 @@ def run_ansible(
         env.update({"ANSIBLE_CONFIG": str(cfg)})
 
     logging.debug("Running subcommand: %s", " ".join(command))
-    return subprocess.run(command, env=env, check=False)
+    return subprocess.run(command, cwd=working_dir, env=env, check=False)
 
 
 def main() -> None:
@@ -305,31 +213,20 @@ def main() -> None:
     if "RULES_ANSIBLE_DEBUG" in os.environ:
         logging.basicConfig(level=logging.DEBUG)
 
+    working_dir = get_working_directory()
     playbook = get_playbook()
-    if not playbook.exists():
-        raise FileNotFoundError("Requested playbook not found", playbook)
 
-    # Check for an explicit vault key
-    vault_key = find_vault_key()
+    # Vault encrypted files are decrypted in memory by Ansible itself. Nothing
+    # is ever written to disk, the launcher only locates the password file.
+    vault_key = find_vault_key(working_dir)
 
-    # Check for any vault files
-    vault_files = decrypt_vault(
-        vault_files=get_ansible_vault_files(),
-        vault_key=vault_key,
+    result = run_ansible(
+        playbook=playbook,
+        working_dir=working_dir,
+        vault_password_file=vault_key,
     )
 
-    logging.debug("Decrypted %s vault files", len(vault_files))
-
-    try:
-        result = run_ansible(
-            playbook=playbook,
-            vault_password_file=vault_key,
-            extra_args=get_ansible_args(),
-        )
-
-        sys.exit(result.returncode)
-    finally:
-        delete_files(vault_files)
+    sys.exit(result.returncode)
 
 
 if __name__ == "__main__":

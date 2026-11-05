@@ -1,20 +1,10 @@
 ---
-
 - name: Install nginx
   ansible.builtin.dnf: # noqa: package-latest
     name:
       - nginx
       - nginx-mod-stream
     state: latest
-
-- name: Install primary nginx config
-  ansible.builtin.copy:
-    src: nginx.conf
-    dest: /etc/nginx/nginx.conf
-    owner: root
-    group: root
-    mode: "0644"
-  notify: Restart nginx
 
 - name: Create a shared config directory
   ansible.builtin.file:
@@ -27,12 +17,13 @@
     - /etc/nginx/conf.d/stream
     - /etc/nginx/conf.d/http
 
-- name: Enable nginx service
-  ansible.builtin.service:
-    name: nginx
-    enabled: true
-
-- name: Start nginx
-  ansible.builtin.service:
-    name: nginx
-    state: started
+# The test containers have no init system so nginx is never started, the
+# config is validated in place instead.
+- name: Install primary nginx config
+  ansible.builtin.copy:
+    src: nginx.conf
+    dest: /etc/nginx/nginx.conf
+    owner: root
+    group: root
+    mode: "0644"
+    validate: /usr/sbin/nginx -t -c %s

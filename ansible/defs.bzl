@@ -13,11 +13,9 @@ load(
 load(
     ":toolchain.bzl",
     _ansible_toolchain = "ansible_toolchain",
-    _current_ansible_toolchain = "current_ansible_toolchain",
 )
 
 ansible_lint_aspect = _ansible_lint_aspect
 ansible_lint_test = _ansible_lint_test
 ansible_playbook = _ansible_playbook
 ansible_toolchain = _ansible_toolchain
-current_ansible_toolchain = _current_ansible_toolchain

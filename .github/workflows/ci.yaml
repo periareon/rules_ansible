@@ -55,13 +55,8 @@ jobs:
 
       - name: Integration tests
         run: |
-          if [[ "${RUNNER_OS}" == "Windows" ]]; then
-            bazel ${BAZEL_STARTUP_FLAGS[@]} run ////tests:infra_setup
-            bazel ${BAZEL_STARTUP_FLAGS[@]} run ////tests/simple
-          else
-            bazel ${BAZEL_STARTUP_FLAGS[@]} run //tests:infra_setup
-            bazel ${BAZEL_STARTUP_FLAGS[@]} run //tests/simple
-          fi
+          bazel ${BAZEL_STARTUP_FLAGS[@]} run //tests:infra_setup
+          bazel ${BAZEL_STARTUP_FLAGS[@]} test //tests/integration:integration_test
         if: startswith(runner.os, 'Linux')
 
   ci-format:

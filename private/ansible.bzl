@@ -18,123 +18,6 @@ AnsiblePlaybookInfo = provider(
     },
 )
 
-def _label_relativize(file):
-    """A utility function for determining the path of a file relative to the package it's defined in.
-
-    Args:
-        file (File): The file in question.
-
-    Returns:
-        str: The file path relative to the owner's package.
-    """
-    repo_path = file.short_path
-    if repo_path.startswith("../"):
-        repo_path = repo_path[3:]
-
-    if repo_path.startswith(file.owner.package):
-        repo_path = repo_path[len(file.owner.package):].lstrip("/")
-
-    return repo_path
-
-def _copy_arg(file, is_windows):
-    if is_windows:
-        return file.path.replace("/", "\\")
-    return file.path
-
-def _vault_copy_action(ctx, file):
-    """Spawn an action to copy a vault file.
-
-    Vault files are intended to be un-remote cachable.
-
-    Args:
-        ctx (ctx): The rule's context object.
-        file (File): A file in question.
-
-    Returns:
-        File: The action output.
-    """
-    copy = ctx.actions.declare_file("{}.ansible/{}.vaultfile".format(
-        ctx.label.name,
-        _label_relativize(file),
-    ))
-    is_windows = ctx.executable._copier.basename.endswith((".bat", ".exe", ".ps1"))
-    args = ctx.actions.args()
-    args.add(_copy_arg(file, is_windows))
-    args.add(_copy_arg(copy, is_windows))
-    ctx.actions.run(
-        executable = ctx.executable._copier,
-        mnemonic = "AnsibleVaultCopier",
-        outputs = [copy],
-        arguments = [args],
-        inputs = [file],
-        # Rationale for the execution requirements can be found here:
-        # https://github.com/bazelbuild/bazel-skylib/blob/1.8.1/rules/private/copy_common.bzl#L18-L45
-        execution_requirements = {
-            "no-cache": "1",
-            "no-remote": "1",
-        },
-    )
-    return copy
-
-def _copy_action(ctx, file, name = None):
-    """Spawn an action to copy a file.
-
-    Args:
-        ctx (ctx): The rule's context object.
-        file (File): A file in question.
-        name (str, optional): If set, this will be the path to the file instead of it's
-            package relativie name.
-
-    Returns:
-        File: The action output.
-    """
-    output = ctx.actions.declare_file("{}.ansible/{}".format(
-        ctx.label.name,
-        name or _label_relativize(file),
-    ))
-    is_windows = ctx.executable._copier.basename.endswith((".bat", ".exe", ".ps1"))
-    args = ctx.actions.args()
-    args.add(_copy_arg(file, is_windows))
-    args.add(_copy_arg(output, is_windows))
-    ctx.actions.run(
-        executable = ctx.executable._copier,
-        mnemonic = "AnsibleCopier",
-        outputs = [output],
-        arguments = [args],
-        inputs = [file],
-        # Rationale for the execution requirements can be found here:
-        # https://github.com/bazelbuild/bazel-skylib/blob/1.8.1/rules/private/copy_common.bzl#L18-L45
-        execution_requirements = {
-            "no-cache": "1",
-            "no-remote": "1",
-        },
-        use_default_shell_env = True,
-    )
-
-    return output
-
-def _copy_inventory_action(ctx, file):
-    """Spawn an action to copy an inventory file.
-
-    This function accounts for inventory structures where the targets
-    representing the inventory files may be within the `inventories`
-    directory. E.g. `//infra/ansible/inventories/staging:inventory`.
-
-    Args:
-        ctx (ctx): The rule's context object.
-        file (File): A file in question.
-
-    Returns:
-        File: The action output.
-    """
-    name = file.basename
-    if "inventories" in file.owner.package:
-        _, _, env = file.owner.package.partition("inventories")
-        file_path = _label_relativize(file)
-        name = "inventories/{}/{}".format(env, file_path)
-
-    return _copy_action(ctx, file, name)
-
 def _rlocationpath(file, workspace_name):
     if file.short_path.startswith("../"):
         return file.short_path[len("../"):]
@@ -143,51 +26,75 @@ def _rlocationpath(file, workspace_name):
 
 def _ansible_playbook_impl(ctx):
     venv_toolchain = py_venv_common.get_toolchain(ctx)
-    hosts_file = _copy_inventory_action(ctx, ctx.file.hosts)
-    inventory_files = [_copy_inventory_action(ctx, file) for file in ctx.files.inventory]
-    role_files = [_copy_action(ctx, file) for file in ctx.files.roles]
-    playbook = _copy_action(ctx, ctx.file.playbook)
-    config = _copy_action(ctx, ctx.file.config)
 
-    # Create copies of all vault files to allow for them to be decrypted at
-    # runtime without ever litering the repo with decrypted files
-    vault_files = [_vault_copy_action(ctx, file) for file in ctx.files.vault]
+    # Playbooks run straight out of runfiles. Source files keep their repo
+    # layout there, so roles, `group_vars`, `host_vars` and anything else
+    # sitting next to the playbook or inventory is found by Ansible exactly
+    # as it would be in a checkout. No staging copies are made.
+    playbook = ctx.file.playbook
+    hosts = ctx.file.hosts
+    config = ctx.file.config
 
-    env = {
-        "ANSIBLE_BZL_ARGS": json.encode(getattr(ctx.attr, "args", [])),
+    # The launcher is configured through a generated entrypoint rather than
+    # `RunEnvironmentInfo` so the executable is self contained. It behaves the
+    # same under `bazel run`, when executed from another target's runfiles,
+    # or when published as a binary or zipapp.
+    settings = {
         "ANSIBLE_BZL_CONFIG": _rlocationpath(config, ctx.workspace_name),
-        "ANSIBLE_BZL_INVENTORY_HOSTS": _rlocationpath(hosts_file, ctx.workspace_name),
+        "ANSIBLE_BZL_INVENTORY_HOSTS": _rlocationpath(hosts, ctx.workspace_name),
         "ANSIBLE_BZL_LAUNCHER_NAME": ctx.label.name,
         "ANSIBLE_BZL_PACKAGE": ctx.label.package,
         "ANSIBLE_BZL_PLAYBOOK": _rlocationpath(playbook, ctx.workspace_name),
-        "ANSIBLE_BZL_VAULT_FILES": json.encode([_rlocationpath(file, ctx.workspace_name) for file in vault_files]),
     }
 
-    data = [playbook, config, hosts_file] + vault_files + inventory_files + role_files
+    entrypoint = ctx.actions.declare_file("{}.ansible_launcher.py".format(ctx.label.name))
+    ctx.actions.write(
+        output = entrypoint,
+        content = "\n".join(
+            [
+                '"""Generated entrypoint for the `{}` Ansible playbook."""'.format(ctx.label),
+                "",
+                "import os",
+                "",
+            ] + [
+                "os.environ[{}] = {}".format(json.encode(key), json.encode(value))
+                for key, value in settings.items()
+            ] + [
+                "",
+                "from private.ansible_launcher import main  # noqa: E402",
+                "",
+                'if __name__ == "__main__":',
+                "    main()",
+                "",
+            ],
+        ),
+    )
+
+    data = [playbook, config, hosts] + ctx.files.inventory + ctx.files.roles + ctx.files.vault
 
     script_info = get_process_wrapper_attr(ctx, "_launcher")
 
-    runner, runfiles = generate_process_wrapper(
+    wrapper = generate_process_wrapper(
         ctx = ctx,
         script_info = script_info,
         runfiles = ctx.runfiles(files = data, transitive_files = venv_toolchain.all_files),
+        main = entrypoint,
     )
 
     return [
         AnsiblePlaybookInfo(
             playbook = playbook,
-            hosts = hosts_file,
-            inventory = depset(inventory_files + [hosts_file]),
-            roles = depset(role_files),
+            hosts = hosts,
+            inventory = depset(ctx.files.inventory + [hosts]),
+            roles = depset(ctx.files.roles),
         ),
         DefaultInfo(
-            files = depset([runner]),
-            runfiles = runfiles,
-            executable = runner,
+            files = depset([wrapper.executable]),
+            runfiles = wrapper.runfiles,
+            executable = wrapper.executable,
         ),
-        RunEnvironmentInfo(
-            environment = env,
-        ),
+        wrapper.py_info,
+        wrapper.executable_info,
     ]
 
 ansible_playbook = rule(
@@ -218,14 +125,13 @@ ansible_playbook = rule(
             allow_files = True,
         ),
         "vault": attr.label_list(
-            doc = "Vault files to be decrypted before running",
+            doc = (
+                "Vault encrypted files required by the playbook. These are never decrypted on disk. " +
+                "Ansible decrypts them in memory at runtime using the vault password file located by " +
+                "the launcher (a `.vault_pass` file next to the playbook, its parent package, or the " +
+                "workspace root) or one passed explicitly via `--vault-password-file`."
+            ),
             allow_files = True,
-        ),
-        "_copier": attr.label(
-            doc = "A utility binary for copying vault files.",
-            cfg = "exec",
-            executable = True,
-            default = Label("//private/utils:copier"),
         ),
         "_launcher": attr.label(
             doc = "The process wrapper for launching `ansible-playbook`",

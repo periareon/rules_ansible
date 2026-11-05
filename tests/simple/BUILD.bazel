@@ -8,6 +8,7 @@ ansible_playbook(
     ]),
     playbook = "site.yaml",
     roles = glob(["roles/**"]),
+    visibility = ["//tests:__subpackages__"],
 )
 
 ansible_lint_test(
