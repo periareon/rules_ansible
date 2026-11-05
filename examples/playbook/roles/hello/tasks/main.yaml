@@ -1,0 +1,9 @@
+---
+- name: Check that group_vars were loaded
+  ansible.builtin.assert:
+    that:
+      - greeting is defined
+
+- name: Say hello
+  ansible.builtin.debug:
+    msg: "{{ greeting }}"

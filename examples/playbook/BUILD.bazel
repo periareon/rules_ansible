@@ -1,0 +1,14 @@
+load("@rules_ansible//ansible:defs.bzl", "ansible_lint_test", "ansible_playbook")
+
+ansible_playbook(
+    name = "site",
+    hosts = "hosts",
+    inventory = glob(["group_vars/**"]),
+    playbook = "site.yaml",
+    roles = glob(["roles/**"]),
+)
+
+ansible_lint_test(
+    name = "site_lint_test",
+    playbook = ":site",
+)

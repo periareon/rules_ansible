@@ -1,0 +1,37 @@
+"""A consumer of `rules_ansible`.
+
+This module exercises the rules the way a dependent repository would, with
+`rules_ansible` as an external module rather than the main repository. It
+is run in CI alongside the main test suite.
+"""
+
+module(
+    name = "rules_ansible_example",
+    version = "0.0.0",
+)
+
+bazel_dep(name = "rules_ansible", version = "0.0.0")
+local_path_override(
+    module_name = "rules_ansible",
+    path = "..",
+)
+
+bazel_dep(name = "platforms", version = "1.0.0")
+bazel_dep(name = "rules_req_compile", version = "1.6.5")
+bazel_dep(name = "rules_venv", version = "0.37.0")
+
+# A consumer provides its own `ansible`, `ansible-core` and `ansible-lint`
+# and registers an `ansible_toolchain` for them. A real consumer maintains
+# its own lock files, this one borrows those of `rules_ansible`.
+requirements = use_extension("@rules_req_compile//extensions:python.bzl", "requirements")
+requirements.parse(
+    name = "example_pip_deps",
+    requirements_locks = {
+        "@rules_ansible//tools/requirements:requirements_linux_x86_64.txt": "linux_x86_64",
+        "@rules_ansible//tools/requirements:requirements_macos_aarch64.txt": "macos_aarch64",
+        "@rules_ansible//tools/requirements:requirements_windows_x86_64.txt": "windows_x86_64",
+    },
+)
+use_repo(requirements, "example_pip_deps")
+
+register_toolchains("//:ansible_toolchain")

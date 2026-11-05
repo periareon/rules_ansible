@@ -11,6 +11,7 @@ load(
 AnsiblePlaybookInfo = provider(
     doc = "Infomation describing components of an Ansible playbook.",
     fields = {
+        "config": "File: The ansible config file",
         "hosts": "File: The hosts file for the current inventory",
         "inventory": "depset[File]: The sources of all inventory files",
         "playbook": "File: The root of the playbook",
@@ -83,6 +84,7 @@ def _ansible_playbook_impl(ctx):
 
     return [
         AnsiblePlaybookInfo(
+            config = config,
             playbook = playbook,
             hosts = hosts,
             inventory = depset(ctx.files.inventory + [hosts]),
