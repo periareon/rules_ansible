@@ -1,0 +1,12 @@
+load("@bazel_skylib//rules:write_file.bzl", "write_file")
+
+# Stands in for an application built by Bazel, e.g. a `pkg_tar` of a service.
+write_file(
+    name = "config",
+    out = "app.conf",
+    content = [
+        "listen = 8080",
+        "",
+    ],
+    visibility = ["//visibility:public"],
+)

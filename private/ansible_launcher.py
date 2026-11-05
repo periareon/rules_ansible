@@ -1,11 +1,12 @@
 """The ansible-playbook launcher."""
 
+import json
 import logging
 import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 from python.runfiles import Runfiles
 
@@ -14,8 +15,27 @@ ENV_ANSIBLE_BZL_PACKAGE = "ANSIBLE_BZL_PACKAGE"
 ENV_ANSIBLE_BZL_CONFIG = "ANSIBLE_BZL_CONFIG"
 ENV_ANSIBLE_BZL_LAUNCHER_NAME = "ANSIBLE_BZL_LAUNCHER_NAME"
 ENV_ANSIBLE_BZL_INVENTORY_HOSTS = "ANSIBLE_BZL_INVENTORY_HOSTS"
+ENV_ANSIBLE_BZL_ROLES = "ANSIBLE_BZL_ROLES"
 
-RUNFILES: Optional[Runfiles] = Runfiles.Create()
+RUNFILES: Optional[Runfiles] = None
+
+
+def _create_runfiles() -> Optional[Runfiles]:
+    """Create the runfiles lookup, preferring the runfiles directory.
+
+    A manifest resolves source files into the checkout, where files generated
+    by Bazel are absent. In a runfiles directory a role's generated files sit
+    next to its sources, so one is used whenever it exists: the directory the
+    venv rendered from its runfiles collection, or the one Bazel built.
+
+    Returns:
+        The runfiles object, if runfiles could be located.
+    """
+    for var in ("RULES_VENV_RUNFILES_DIR", "RUNFILES_DIR"):
+        runfiles_dir = os.getenv(var)
+        if runfiles_dir and os.path.isdir(runfiles_dir):
+            return Runfiles.CreateDirectoryBased(runfiles_dir)
+    return Runfiles.Create()
 
 
 def _rlocation(rlocationpath: str) -> Path:
@@ -87,6 +107,24 @@ def get_ansible_package() -> str:
         The Bazel package name of the current target.
     """
     return _env(ENV_ANSIBLE_BZL_PACKAGE)
+
+
+def get_roles_path() -> List[Path]:
+    """Get the directories containing the `ansible_role` targets of the playbook.
+
+    Each role is described by one of its files and the number of path
+    components from that file up to the directory containing the role, so the
+    directory resolves wherever the file does.
+
+    Returns:
+        The directories to put on `ANSIBLE_ROLES_PATH`.
+    """
+    roles_path: List[Path] = []
+    for role in json.loads(_env(ENV_ANSIBLE_BZL_ROLES)):
+        directory = _rlocation(role["file"]).parents[role["depth"] - 1]
+        if directory not in roles_path:
+            roles_path.append(directory)
+    return roles_path
 
 
 def get_ansible_bin() -> Path:
@@ -204,6 +242,13 @@ def run_ansible(
     if cfg and "ANSIBLE_CONFIG" not in env:
         env.update({"ANSIBLE_CONFIG": str(cfg)})
 
+    # Roles from `ansible_role` targets are found by name through the roles path.
+    roles_path = [str(path) for path in get_roles_path()]
+    if roles_path:
+        if env.get("ANSIBLE_ROLES_PATH"):
+            roles_path.append(env["ANSIBLE_ROLES_PATH"])
+        env["ANSIBLE_ROLES_PATH"] = os.pathsep.join(roles_path)
+
     logging.debug("Running subcommand: %s", " ".join(command))
     return subprocess.run(command, cwd=working_dir, env=env, check=False)
 
@@ -212,6 +257,9 @@ def main() -> None:
     """The main entrypoint of the script."""
     if "RULES_ANSIBLE_DEBUG" in os.environ:
         logging.basicConfig(level=logging.DEBUG)
+
+    global RUNFILES
+    RUNFILES = _create_runfiles()
 
     working_dir = get_working_directory()
     playbook = get_playbook()

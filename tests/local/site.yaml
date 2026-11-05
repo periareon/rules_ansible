@@ -1,0 +1,6 @@
+---
+- name: Local
+  hosts: all
+  gather_facts: false
+  roles:
+    - release

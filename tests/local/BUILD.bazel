@@ -1,0 +1,40 @@
+load("@bazel_skylib//rules:write_file.bzl", "write_file")
+load("@rules_ansible//ansible:defs.bzl", "ansible_lint_test", "ansible_playbook")
+load("@rules_venv//python:defs.bzl", "py_test")
+
+# An artifact built here and installed by the `release` role.
+write_file(
+    name = "artifact",
+    out = "artifact.txt",
+    content = [
+        "hello, bazel",
+        "",
+    ],
+    newline = "unix",
+    visibility = ["//tests:__subpackages__"],
+)
+
+# Roles come from other packages. Their python dependencies and the roles
+# they depend on follow them.
+ansible_playbook(
+    name = "local",
+    hosts = "hosts",
+    inventory = glob(["group_vars/*.yaml"]),
+    playbook = "site.yaml",
+    roles = ["//tests/roles/release"],
+)
+
+ansible_lint_test(
+    name = "local_lint_test",
+    playbook = ":local",
+)
+
+# Runs the playbook against localhost. No containers are required so this
+# runs with the rest of the suite.
+py_test(
+    name = "local_test",
+    srcs = ["local_test.py"],
+    data = [":local"],
+    env = {"PLAYBOOK": "$(rlocationpath :local)"},
+    deps = ["@rules_venv//python/runfiles"],
+)

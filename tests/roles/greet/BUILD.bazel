@@ -1,0 +1,19 @@
+load("@rules_ansible//ansible:defs.bzl", "ansible_role")
+load("@rules_venv//python:defs.bzl", "py_library")
+
+# A python package used by the role's filter plugin. It reaches Ansible, and
+# `ansible-lint`, through `deps` of every playbook using the role.
+py_library(
+    name = "greeter",
+    srcs = ["greeter.py"],
+)
+
+ansible_role(
+    name = "greet",
+    srcs = glob([
+        "filter_plugins/*.py",
+        "tasks/*.yaml",
+    ]),
+    visibility = ["//tests:__subpackages__"],
+    deps = [":greeter"],
+)

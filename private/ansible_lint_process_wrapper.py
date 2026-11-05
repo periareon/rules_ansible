@@ -17,6 +17,24 @@ ANSIBLE_LINT_ENTRY_POINT = "ANSIBLE_LINT_ENTRY_POINT"
 RUNFILES: Optional[Runfiles] = None
 
 
+def _create_runfiles() -> Optional[Runfiles]:
+    """Create the runfiles lookup, preferring the runfiles directory.
+
+    A manifest resolves source files into the checkout, where files generated
+    by Bazel are absent. In a runfiles directory a role's generated files sit
+    next to its sources, so one is used whenever it exists: the directory the
+    venv rendered from its runfiles collection, or the one Bazel built.
+
+    Returns:
+        The runfiles object, if runfiles could be located.
+    """
+    for var in ("RULES_VENV_RUNFILES_DIR", "RUNFILES_DIR"):
+        runfiles_dir = os.getenv(var)
+        if runfiles_dir and os.path.isdir(runfiles_dir):
+            return Runfiles.CreateDirectoryBased(runfiles_dir)
+    return Runfiles.Create()
+
+
 def is_test() -> bool:
     """Determin if the process is running under `bazel test`.
 
@@ -122,6 +140,17 @@ def parse_args(argv: Optional[Sequence[str]]) -> argparse.Namespace:
         help="The ansible-lint config file.",
     )
     parser.add_argument(
+        "--role",
+        nargs=2,
+        action="append",
+        default=[],
+        metavar=("FILE", "DEPTH"),
+        help=(
+            "A file of an `ansible_role` and the number of path components from it up to "
+            "the directory containing the role. Those directories form `ANSIBLE_ROLES_PATH`."
+        ),
+    )
+    parser.add_argument(
         "lint_args",
         nargs="*",
         default=[],
@@ -132,6 +161,12 @@ def parse_args(argv: Optional[Sequence[str]]) -> argparse.Namespace:
         args = parser.parse_args(argv)
     else:
         args = parser.parse_args()
+
+    args.roles_path = []
+    for file, depth in args.role:
+        directory = file_type(file).parents[int(depth) - 1]
+        if directory not in args.roles_path:
+            args.roles_path.append(directory)
 
     # Update lint args to use explicitly parsed values
     args.lint_args = (
@@ -255,7 +290,7 @@ def main() -> None:
         logging.basicConfig(level=logging.DEBUG)
 
     global RUNFILES
-    RUNFILES = Runfiles.Create()
+    RUNFILES = _create_runfiles()
 
     args_file = _find_args_file()
     argv = None
@@ -267,6 +302,11 @@ def main() -> None:
         "ANSIBLE_CONFIG": str(args.config_file),
         "ANSIBLE_PLAYBOOK_DIR": str(args.playbook.parent),
     }
+    if args.roles_path:
+        roles_path = [str(path) for path in args.roles_path]
+        if os.environ.get("ANSIBLE_ROLES_PATH"):
+            roles_path.append(os.environ["ANSIBLE_ROLES_PATH"])
+        env["ANSIBLE_ROLES_PATH"] = os.pathsep.join(roles_path)
 
     proc = lint_main(args=args.lint_args, additional_env=env)
 

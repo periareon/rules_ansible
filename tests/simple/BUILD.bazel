@@ -3,11 +3,9 @@ load("@rules_ansible//ansible:defs.bzl", "ansible_lint_test", "ansible_playbook"
 ansible_playbook(
     name = "simple",
     hosts = "hosts",
-    inventory = ["hosts"] + glob([
-        "group_vars/**",
-    ]),
+    inventory = ["hosts"] + glob(["group_vars/*.yaml"]),
     playbook = "site.yaml",
-    roles = glob(["roles/**"]),
+    roles = glob(["roles/**/*.yaml"]),
     visibility = ["//tests:__subpackages__"],
 )
 

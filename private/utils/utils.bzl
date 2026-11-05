@@ -85,7 +85,11 @@ def generate_process_wrapper(
         ctx,
         script_info,
         runfiles,
-        main = None):
+        main = None,
+        deps = [],
+        name = None,
+        cfg = "target",
+        for_action = False):
     """Create an executable which runs a python script within a venv.
 
     Args:
@@ -95,6 +99,15 @@ def generate_process_wrapper(
         main (File, optional): An entrypoint to use in place of `script_info.main`. The
             script's own `main` is still a source of the executable so the entrypoint
             can import it.
+        deps (list, optional): Additional python dependencies (targets providing `PyInfo`)
+            to include in the venv.
+        name (str, optional): The name of the generated outputs. Defaults to the name of
+            the current label. Aspects must set this to avoid clashing with the target.
+        cfg (str, optional): The configuration (`target` or `exec`) to take the venv
+            toolchain from.
+        for_action (bool, optional): If true, the executable is built to run inside a
+            Bazel action rather than from runfiles. Its `runfiles.files` must then be
+            passed as the `tools` of the action.
 
     Returns:
         struct: A struct with the following fields:
@@ -104,7 +117,7 @@ def generate_process_wrapper(
             - `executable_info` (PyExecutableInfo): The provider consumers such as
               `py_venv_zipapp` use to repackage the executable.
     """
-    venv_toolchain = py_venv_common.get_toolchain(ctx)
+    venv_toolchain = py_venv_common.get_toolchain(ctx, cfg = cfg)
 
     srcs = [script_info.main]
     if main:
@@ -114,7 +127,7 @@ def generate_process_wrapper(
 
     dep_info = py_venv_common.create_dep_info(
         ctx = ctx,
-        deps = [script_info.target],
+        deps = [script_info.target] + deps,
     )
 
     py_info = py_venv_common.create_py_info(
@@ -133,9 +146,17 @@ def generate_process_wrapper(
         venv_toolchain = venv_toolchain,
         py_info = py_info,
         main = main,
+        name = name,
         runfiles = all_runfiles,
-        use_runfiles_in_entrypoint = True,
-        force_runfiles = False,
+        use_runfiles_in_entrypoint = not for_action,
+        # TODO: Set `force_runfiles = True` unconditionally once `rules_venv`
+        # skips rendering its runfiles collection when a runfiles directory
+        # already exists and tolerates an empty `RUNFILES_MANIFEST_FILE`. The
+        # venv then renders the project into a directory at runtime wherever
+        # only a manifest is available, such as an artifact built with
+        # `--nobuild_runfile_links` or on Windows. With the released
+        # `rules_venv` that breaks every executable under `bazel test`.
+        force_runfiles = for_action,
     )
 
     executable_info = py_venv_common.create_py_executable_info(

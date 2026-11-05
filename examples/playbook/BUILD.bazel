@@ -3,9 +3,12 @@ load("@rules_ansible//ansible:defs.bzl", "ansible_lint_test", "ansible_playbook"
 ansible_playbook(
     name = "site",
     hosts = "hosts",
-    inventory = glob(["group_vars/**"]),
+    inventory = glob(["group_vars/*.yaml"]),
     playbook = "site.yaml",
-    roles = glob(["roles/**"]),
+    roles = [
+        "//roles/deploy",
+        "//roles/hello",
+    ],
 )
 
 ansible_lint_test(
