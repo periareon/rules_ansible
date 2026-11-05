@@ -169,7 +169,6 @@
 <li><a href="rules.html#ansible_lint_test">ansible_lint_test</a></li>
 <li><a href="rules.html#ansible_playbook">ansible_playbook</a></li>
 <li><a href="rules.html#ansible_toolchain">ansible_toolchain</a></li>
-<li><a href="rules.html#current_ansible_toolchain">current_ansible_toolchain</a></li>
 </ul>
 <h2 id="aspects"><a class="header" href="#aspects">Aspects</a></h2>
 <ul>
@@ -206,7 +205,7 @@ ansible_playbook(<a href="rules.html#ansible_playbook-name">name</a>, <a href="r
 <tr><td style="text-align: left"><a id="ansible_playbook-inventory"></a>inventory</td><td style="text-align: left">Ansible inventory files</td><td style="text-align: left"><a href="https://bazel.build/concepts/labels">List of labels</a></td><td style="text-align: left">optional</td><td style="text-align: left"><code>[]</code></td></tr>
 <tr><td style="text-align: left"><a id="ansible_playbook-playbook"></a>playbook</td><td style="text-align: left">The ansible playbook yaml file.</td><td style="text-align: left"><a href="https://bazel.build/concepts/labels">Label</a></td><td style="text-align: left">required</td><td style="text-align: left"></td></tr>
 <tr><td style="text-align: left"><a id="ansible_playbook-roles"></a>roles</td><td style="text-align: left">The source files for all ansible roles required by the playbook.</td><td style="text-align: left"><a href="https://bazel.build/concepts/labels">List of labels</a></td><td style="text-align: left">optional</td><td style="text-align: left"><code>[]</code></td></tr>
-<tr><td style="text-align: left"><a id="ansible_playbook-vault"></a>vault</td><td style="text-align: left">Vault files to be decrypted before running</td><td style="text-align: left"><a href="https://bazel.build/concepts/labels">List of labels</a></td><td style="text-align: left">optional</td><td style="text-align: left"><code>[]</code></td></tr>
+<tr><td style="text-align: left"><a id="ansible_playbook-vault"></a>vault</td><td style="text-align: left">Vault encrypted files required by the playbook. These are never decrypted on disk. Ansible decrypts them in memory at runtime using the vault password file located by the launcher (a <code>.vault_pass</code> file next to the playbook, its parent package, or the workspace root) or one passed explicitly via <code>--vault-password-file</code>.</td><td style="text-align: left"><a href="https://bazel.build/concepts/labels">List of labels</a></td><td style="text-align: left">optional</td><td style="text-align: left"><code>[]</code></td></tr>
 </tbody></table>
 </div>
 <p><a id="ansible_toolchain"></a></p>
@@ -223,19 +222,6 @@ ansible_toolchain(<a href="rules.html#ansible_toolchain-name">name</a>, <a href=
 <tr><td style="text-align: left"><a id="ansible_toolchain-ansible"></a>ansible</td><td style="text-align: left">An <a href="https://pypi.org/project/ansible/">ansible</a> <code>py_library</code> target.</td><td style="text-align: left"><a href="https://bazel.build/concepts/labels">Label</a></td><td style="text-align: left">required</td><td style="text-align: left"></td></tr>
 <tr><td style="text-align: left"><a id="ansible_toolchain-ansible_core"></a>ansible_core</td><td style="text-align: left">An <a href="https://pypi.org/project/ansible-core/">ansible-core</a> <code>py_library</code> target.</td><td style="text-align: left"><a href="https://bazel.build/concepts/labels">Label</a></td><td style="text-align: left">required</td><td style="text-align: left"></td></tr>
 <tr><td style="text-align: left"><a id="ansible_toolchain-ansible_lint"></a>ansible_lint</td><td style="text-align: left">An <a href="https://pypi.org/project/ansible-lint/">ansible-lint</a> <code>py_library</code> target.</td><td style="text-align: left"><a href="https://bazel.build/concepts/labels">Label</a></td><td style="text-align: left">required</td><td style="text-align: left"></td></tr>
-</tbody></table>
-</div>
-<p><a id="current_ansible_toolchain"></a></p>
-<h2 id="current_ansible_toolchain"><a class="header" href="#current_ansible_toolchain">current_ansible_toolchain</a></h2>
-<pre>
-load("@rules_ansible//ansible:defs.bzl", "current_ansible_toolchain")
-
-current_ansible_toolchain(<a href="rules.html#current_ansible_toolchain-name">name</a>, <a href="rules.html#current_ansible_toolchain-lib">lib</a>)
-</pre>
-<p><strong>ATTRIBUTES</strong></p>
-<div class="table-wrapper"><table><thead><tr><th style="text-align: left">Name</th><th style="text-align: left">Description</th><th style="text-align: left">Type</th><th style="text-align: left">Mandatory</th><th style="text-align: left">Default</th></tr></thead><tbody>
-<tr><td style="text-align: left"><a id="current_ansible_toolchain-name"></a>name</td><td style="text-align: left">A unique name for this target.</td><td style="text-align: left"><a href="https://bazel.build/concepts/labels#target-names">Name</a></td><td style="text-align: left">required</td><td style="text-align: left"></td></tr>
-<tr><td style="text-align: left"><a id="current_ansible_toolchain-lib"></a>lib</td><td style="text-align: left">Which py_library within the ansible toolchain to yield providers from</td><td style="text-align: left">String</td><td style="text-align: left">optional</td><td style="text-align: left"><code>"ansible"</code></td></tr>
 </tbody></table>
 </div>
 <p><a id="ansible_lint_aspect"></a></p>
